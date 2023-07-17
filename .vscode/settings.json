@@ -6,7 +6,5 @@
   "deno.enable": true,
   "deno.suggest.completeFunctionCalls": true,
   "deno.unstable": true,
-  "files.exclude": {
-    "npm": true
-  }
+
 }

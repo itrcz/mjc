@@ -57,6 +57,9 @@ export function extractPrompt(
 
   let extra = content;
 
+  // remove useless staff
+  extra = extra.split(' [image here](https://')[0]
+
   /**
    * speed first
    */
@@ -177,10 +180,10 @@ export function extractPrompt(
     result.prompt = extra.substring(2, extra.length - 2);
     return result;
   }
-  if (id === "936929561302675456") {
-    logger.warn(`Failed to extract prompt data from: ${pc.yellow(content)}`);
-    logger.warn(`Extra data:"${pc.yellow(extra)}"`);
-  }
+  // if (id === "936929561302675456") {
+  //   logger.warn(`Failed to extract prompt data from: ${pc.yellow(content)}`);
+  //   logger.warn(`Extra data:"${pc.yellow(extra)}"`);
+  // }
 }
 
 export class DiscordMessage implements APIMessage {
@@ -332,7 +335,13 @@ export class DiscordMessage implements APIMessage {
   constructor(client: Midjourney, source: APIMessage) {
     Object.assign(this, source);
     this.#client = client;
-    // this.id = source.id;
+    
+    // handle error prompt
+    if (source.embeds[0]?.footer?.text && !source.content) {
+      
+      source.content = `**${source.embeds[0].footer.text.replace(/\/\S+ /, "")}** - <@${source?.interaction?.user?.id}> (Stopped) (fast)`
+    }
+
     this.prompt = extractPrompt(source.content, source.author?.id);
     this.content = source.content;
     if (source.referenced_message) {

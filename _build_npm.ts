@@ -47,7 +47,7 @@ export async function buildDnt() {
 
   const packageJson: PackageJson = {
     // package.json properties
-    name: "midjourney-discord-api",
+    name: "mjdapi",
     author: "Uriel Chemouni <uchemouni@gmail.com> (https://uriel.deno.dev/)",
     license: "MIT",
     funding: "https://github.com/UrielCh/midjourney-client?sponsor=1",
@@ -136,7 +136,7 @@ export async function buildDnt() {
   let readme = Deno.readTextFileSync("readme.md");
   readme = readme.replaceAll(
     "https://deno.land/x/midjourney_discord_api/mod.ts",
-    "midjourney-discord-api",
+    "mjdapi",
   );
   Deno.writeTextFileSync("npm/README.md", readme);
   //Deno.copyFileSync("README.md", "npm/README.md");

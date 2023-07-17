@@ -35,10 +35,10 @@ export interface WaitOptions {
   imgId?: 1 | 2 | 3 | 4 | string;
   startId?: Snowflake;
   parentId?: Snowflake;
-  progress?: (percent: number) => void;
+  progress?: (percent: number, message: DiscordMessage) => void;
 }
 export interface WaitOptionsProgress extends WaitOptions {
-  progress: (percent: number) => void;
+  progress: (percent: number, message: DiscordMessage) => void;
 }
 // export type WaitOptions = Exclude<WaitOptionsProgress, 'progress'> & Partial<Pick<WaitOptionsProgress, 'progress'>>;
 
@@ -394,7 +394,7 @@ export class Midjourney {
 
   async imagine(
     prompt: string,
-    progress?: (percent: number) => void,
+    progress?: (percent: number, message: DiscordMessage) => void,
   ): Promise<DiscordMessage> {
     await this.pWall.waitForAccess();
     const startId = new SnowflakeObj(-this.MAX_TIME_OFFSET).encode();
@@ -403,6 +403,7 @@ export class Midjourney {
     payload.data.options = [{ type: 3, name: "prompt", value: prompt }];
     const response = await this.doInteractions(payload);
     if (response.status === 204) {
+      
       const msg = await this.waitMessage({
         progress,
         interaction: "imagine",
@@ -474,7 +475,7 @@ export class Midjourney {
   public async callCustomComponents(
     parentId: Snowflake,
     button: APIButtonComponentWithCustomId,
-    progress?: (percent: number) => void,
+    progress?: (percent: number, message: DiscordMessage) => void,
   ): Promise<DiscordMessage> {
     await this.pWall.waitForAccess();
     if (!button.disabled && button.style !== ButtonStyle.Primary) {
@@ -535,7 +536,7 @@ export class Midjourney {
     parentId: Snowflake,
     button: APIButtonComponentWithCustomId,
     maxWait = 360,
-    progress?: (percent: number) => void,
+    progress?: (percent: number, message: DiscordMessage) => void,
   ): Promise<DiscordMessage> {
     let type: InteractionName | undefined;
     const label = button.label || button.emoji?.name || "ERROR";
@@ -584,6 +585,12 @@ export class Midjourney {
           }
           return true;
         } else {
+          const promptSeed = itemPrompt?.match(/--seed (\S+)/)?.[1]
+          if (promptSeed) {
+            if (opts.prompt?.match(/--seed (\S+)/)?.[1] == promptSeed) {
+              return true
+            }
+          }
           const itemPromptLt = itemPrompt.replace(/ --[^ ]+ [.\d\w]+$/, "");
           return opts.prompt === itemPrompt || opts.prompt === itemPromptLt;
         }
@@ -639,9 +646,12 @@ export class Midjourney {
       if (r.completion === 1) {
         return Promise.resolve(prevMsg);
       }
+      if (r.error) {
+        return Promise.reject(prevMsg);
+      }
     }
 
-    return new Promise<DiscordMessage>((resolve, _reject) => {
+    return new Promise<DiscordMessage>((resolve, reject) => {
       const listenFnc = (_msgId: Snowflake, msg?: DiscordMessage) => {
         if (!msg) {
           // if (opts.interaction === "blend" && prevMsg && prevMsg.id === msgId) {
@@ -679,6 +689,9 @@ export class Midjourney {
               this.messageEmmiter.removeListener("message", listenFnc);
               resolve(matches[0]);
             }
+            if (r.error) {
+              reject(r.error)
+            }
           }
         }
       };
@@ -690,20 +703,29 @@ export class Midjourney {
   private followCheckMsg(
     msg: DiscordMessage,
     prevCompletion: number,
-    progress: (percent: number) => void,
-  ): { completion: number } {
+    progress: (percent: number, message: DiscordMessage) => void,
+  ): { completion: number, error?: string } {
     const prompt = msg.prompt;
     if (!prompt) {
       // FATAL
       logger.error(`lose track of the current progress with message`, msg);
       throw new Error(`failed to extract prompt from ${msg.content}`);
     }
+    const embed = msg.embeds[0]
+
+    if (embed?.title?.includes("Invalid")) {
+      return { 
+        completion: -1, 
+        error: `${embed.title}: ${embed.description}` 
+      };
+    }
+    
     if (
       prompt.completion !== undefined &&
       prevCompletion !== prompt.completion
     ) {
       prevCompletion = prompt.completion;
-      progress(prevCompletion);
+      progress(prevCompletion, msg);
     }
     return { completion: prevCompletion };
   }
@@ -721,6 +743,11 @@ export class Midjourney {
     for (let i = 0; i < maxWait; i++) {
       const ret = this.followCheckMsg(msg, prevCompletion, opts.progress);
       prevCompletion = ret.completion;
+      
+      if (ret.error) {
+        return null
+      }
+
       if (prevCompletion === 1) return msg; // exit loop
       await wait(1000);
       try {
@@ -752,7 +779,7 @@ export class Midjourney {
    */
   public waitMessage(opts: WaitOptions = {}): Promise<DiscordMessage> {
     if (!opts.progress) {
-      opts.progress = (percent: number) => {
+      opts.progress = (percent: number, message: DiscordMessage) => {
         if (percent < 0) {
           logger.info(`wait for the prompt in Queue`);
         } else if (percent === 1) {
@@ -958,7 +985,7 @@ export class Midjourney {
    */
   public async describeUrl(
     imageUrl: string,
-    progress?: (percent: number) => void,
+    progress?: (percent: number, message: DiscordMessage) => void,
   ): Promise<string[]> {
     const url = new URL(imageUrl);
     const filename = url.pathname.replaceAll(/\//g, "_").replace(/^_/, ""); // "pixelSample.webp";
@@ -980,7 +1007,7 @@ export class Midjourney {
     filename: string,
     imageData: ArrayBufferLike,
     contentType?: string,
-    progress?: (percent: number) => void,
+    progress?: (percent: number, message: DiscordMessage) => void,
   ): Promise<string[]> {
     await this.pWall.waitForAccess();
     contentType = contentType || filename2Mime(filename);
@@ -1019,7 +1046,7 @@ export class Midjourney {
   public async blendUrl(
     imageUrls: string[],
     dimensions?: "1:1" | "2:3" | "3:2",
-    progress?: (percent: number) => void,
+    progress?: (percent: number, message: DiscordMessage) => void,
   ): Promise<DiscordMessage> {
     const images = await Promise.all(
       imageUrls.map(async (imageUrl) => {
@@ -1048,7 +1075,7 @@ export class Midjourney {
       contentType?: string;
     }[],
     dimensions: "1:1" | "2:3" | "3:2" = "1:1",
-    progress?: (percent: number) => void,
+    progress?: (percent: number, message: DiscordMessage) => void,
   ): Promise<DiscordMessage> {
     await this.pWall.waitForAccess();
     images.forEach(
